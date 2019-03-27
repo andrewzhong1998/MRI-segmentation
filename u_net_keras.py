@@ -1,6 +1,7 @@
 from keras.models import *
 from keras.layers import *
 from keras.optimizers import *
+import random
 
 def convert_to_one_hot(Y, C):
     Y = Y.astype(int)
@@ -18,19 +19,25 @@ def Dice(pred,true,labels=[0,1,2,3]):
     return ret
 
 def load_npdataset():
-    pretrain_x = np.load("/proj/NIRAL/users/mingzhi/npdata64/pretrain_x_resized.npy")
-    pretrain_y = np.load("/proj/NIRAL/users/mingzhi/npdata64/pretrain_y_resized.npy")
-    #pretrain_x = np.load("/users/andrew/desktop/npdata64/pretrain_x_resized.npy")
-    #pretrain_y = np.load("/users/andrew/desktop/npdata64/pretrain_y_resized.npy")
-    pretrain_y = convert_to_one_hot(pretrain_y, 4)
-
+    X = np.load("/proj/NIRAL/users/mingzhi/npdata64/pretrain_x_resized.npy")
+    Y = np.load("/proj/NIRAL/users/mingzhi/npdata64/pretrain_y_resized.npy")
+    #X = np.load("/users/andrew/desktop/npdata64/pretrain_x_resized.npy")
+    #Y = np.load("/users/andrew/desktop/npdata64/pretrain_y_resized.npy")
+    Y = convert_to_one_hot(Y, 4)
+    Y = Y.reshape((22, 262144, 4))
     #new_pretrain_x = np.zeros(shape=(22,64,64,64,1))
     #new_pretrain_x[:,:,:,:,0] = pretrain_x[:,:,:,:,0]
 
-    pretrain_x -= np.mean(pretrain_x, axis=0)
-    pretrain_x /= np.std(pretrain_x, axis=0) + 1e-8
+    X -= np.mean(X, axis=0)
+    X /= np.std(X, axis=0) + 1e-8
 
-    return pretrain_x, pretrain_y
+    X_train = X[0:20,:,:,:,:]
+    Y_train = Y[0:20,:,:]
+
+    X_valid = X[20:22,:,:,:,:]
+    Y_valid = Y[20:22,:,:]
+
+    return X_train, Y_train, X_valid, Y_valid
 
 def unet(input_size=(64, 64, 64, 2)):
     inputs = Input(input_size)
@@ -69,21 +76,25 @@ def unet(input_size=(64, 64, 64, 2)):
     outputs = Reshape(target_shape=(262144,4))(outputs)
 
     model = Model(input=inputs, output=outputs)
-    #model.compile(optimizer=Adam(lr=1e-4), loss="categorical_crossentropy", metrics=['accuracy'])
-    weights = np.array((1.0, 1.0, 1.0, 1.0))
-    # weights = np.array((1.29891961, 18.17444055, 7.3159837, 26.02806273))
     model.compile(optimizer=Adam(lr=1e-4), loss="categorical_crossentropy", metrics=['accuracy'])
-    # model.summary()
+    model.summary()
 
     return model
 
-x_train, y_train = load_npdataset()
-y_train = y_train.reshape((22,262144,4))
-weights = np.array((.1, 2., 1., 4.))
-y_train = y_train*weights
+X_train, Y_train, X_valid, Y_valid = load_npdataset()
+
+weights = np.array((.1, 2., 1., 6.))
+Y_train = Y_train * weights
+Y_valid = Y_valid * weights
+
 model = unet()
-model.fit(x_train, y_train, epochs=350, batch_size=2, validation_split=0.1)
-pred = model.predict(x_train, batch_size=2)
+model.fit(X_train, Y_train, epochs=500, batch_size=2, validation_data=(X_valid,Y_valid))
+
+pred = model.predict(X_train, batch_size=2)
 pred = np.argmax(pred, axis=-1)
-y_train = np.argmax(y_train, axis=-1)
+y_train = np.argmax(Y_train, axis=-1)
 print(Dice(pred, y_train))
+
+#id = random.randint(1,10000000)
+#name = 'my_model'+str(id)+'.h5'
+#model.save(name)
